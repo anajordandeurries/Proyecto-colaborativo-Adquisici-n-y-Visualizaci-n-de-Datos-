@@ -365,18 +365,29 @@ print("Duplicados restantes:", jugadores.duplicated().sum())
 jugadores = jugadores.set_index("nombre_jugador")
 
 
-# Duplicados en eventos, sin considerar su identificador
+
+# Duplicados en eventos, sin considerar event_id
 columnas_comparacion = ["match_id", "minute", "player_id", "event_type", "team_id"]
 
-# Mostramos los casos con sus identificadores originales para revisarlos.
-display(registro[registro.duplicated(subset=columnas_comparacion, keep=False)])
+# Mostrar todos los posibles duplicados para revisarlos
+posibles_duplicados = registro.duplicated(subset=columnas_comparacion, keep=False)
 
-# Aplicamos este criterio si hemos confirmado que son copias del mismo evento.
-columnas_comparacion_eventos = ["index_partido", "minuto_evento", "nombre_jugador","tipo_evento", "seleccion_evento"]
+print("Posibles eventos duplicados:")
+display(registro.loc[posibles_duplicados])
 
-print("Eventos repetidos:", eventos.duplicated(subset=columnas_comparacion_eventos).sum())
-eventos = eventos.drop_duplicates(subset=columnas_comparacion_eventos)
+# Conservar los casos con información incompleta
+datos_completos = registro[columnas_comparacion].notna().all(axis=1)
 
+# Marcar las repeticiones, conservando la primera aparición
+duplicados_eliminar = (registro.duplicated(subset=columnas_comparacion, keep="first")& datos_completos)
+
+print("Repeticiones con datos completos:", duplicados_eliminar.sum())
+display(registro.loc[duplicados_eliminar])
+
+# Ejecutar esta línea después de confirmar que son copias del mismo evento
+# eventos = eventos.iloc[(~duplicados_eliminar).to_numpy()].copy()
+
+# Enumerar el índice de eventos
 eventos.index = range(1, len(eventos) + 1)
 eventos.index.name = "index_evento"
 
