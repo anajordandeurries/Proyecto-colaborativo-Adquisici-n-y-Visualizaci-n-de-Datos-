@@ -922,3 +922,452 @@ print("Fechas en formato dd/mm/aaaa:", partidos["fecha_partido"].str.fullmatch(r
 print("Partido 3:", partidos.loc[3, "fecha_partido"])
 print("Partido 87:", partidos.loc[87, "fecha_partido"])
 print("Partido 99:", partidos.loc[99, "fecha_partido"])
+
+
+"""
+7. Imputación de valores ausentes.
+
+7.1. Imputación de valor_mercado mediante la media
+de los jugadores de la misma selección nacional.
+"""
+
+print("\n========== IMPUTACIÓN DE VALOR DE MERCADO ==========")
+
+# Comprobamos cuántos valores faltan antes de imputar.
+print("Valores ausentes antes:")
+print(jugadores["valor_mercado"].isna().sum())
+
+# Calculamos la media del valor de mercado de cada selección.
+# transform("mean") devuelve una media para cada jugador,
+# correspondiente a su selección nacional.
+medias_mercado = jugadores.groupby("seleccion_nacional")["valor_mercado"].transform("mean")
+
+# Sustituimos únicamente los valores ausentes por esa media.
+jugadores["valor_mercado"] = jugadores["valor_mercado"].fillna(medias_mercado)
+
+# Comprobamos cuántos valores siguen sin información.
+print("\nValores ausentes después:")
+print(jugadores["valor_mercado"].isna().sum())
+
+# Mostramos las medias utilizadas para comprobar los resultados.
+print("\nMedia de mercado por selección:")
+print(jugadores.groupby("seleccion_nacional")["valor_mercado"].mean())
+
+
+"""
+7.2. Imputación de calificacion_media mediante regresión.
+
+Primero analizamos los datos disponibles para construir
+dos modelos: porteros y jugadores de campo.
+"""
+
+print("\n========== ANÁLISIS PARA REGRESIÓN ==========")
+
+# Separamos los jugadores según su posición.
+porteros = jugadores[jugadores["posicion"] == "GK"].copy()
+
+campo = jugadores[jugadores["posicion"] != "GK"].copy()
+
+# Variables que utilizaremos en cada regresión.
+variables_porteros = ["paradas", "goles_concedidos"]
+
+variables_campo = [
+    "goles",
+    "asistencias",
+    "tarjetas_amarillas",
+    "tarjetas_rojas"
+]
+
+# Comprobamos el número de jugadores en cada grupo.
+print("\nNúmero de porteros:", len(porteros))
+print("Número de jugadores de campo:", len(campo))
+
+# Comprobamos las calificaciones que faltan.
+print("\nCalificaciones ausentes en porteros:")
+print(porteros["calificacion_media"].isna().sum())
+
+print("\nCalificaciones ausentes en jugadores de campo:")
+print(campo["calificacion_media"].isna().sum())
+
+# Comprobamos los nulos en las variables explicativas.
+print("\nNulos en las estadísticas de los porteros:")
+print(porteros[variables_porteros].isna().sum())
+
+print("\nNulos en las estadísticas de campo:")
+print(campo[variables_campo].isna().sum())
+
+# Revisamos las calificaciones iguales a cero.
+# De momento no las modificamos.
+print("\nPorteros con calificación cero:")
+print((porteros["calificacion_media"] == 0).sum())
+
+print("\nJugadores de campo con calificación cero:")
+print((campo["calificacion_media"] == 0).sum())
+
+# Contamos los jugadores con todos los datos necesarios
+# para entrenar cada modelo.
+# Excluimos del entrenamiento las calificaciones cero
+# para estudiarlas aparte, sin modificarlas en jugadores.
+datos_porteros = porteros.dropna(
+    subset=variables_porteros + ["calificacion_media"]
+)
+
+datos_porteros = datos_porteros[
+    datos_porteros["calificacion_media"] > 0
+]
+
+datos_campo = campo.dropna(
+    subset=variables_campo + ["calificacion_media"]
+)
+
+datos_campo = datos_campo[
+    datos_campo["calificacion_media"] > 0
+]
+
+print("\nPorteros disponibles para entrenar:")
+print(len(datos_porteros))
+
+print("\nJugadores de campo disponibles para entrenar:")
+print(len(datos_campo))
+
+
+"""
+7.2. Entrenamiento de los modelos de regresión.
+
+Construimos un modelo para los porteros y otro para
+los jugadores de campo, utilizando únicamente los
+datos completos y las calificaciones positivas.
+"""
+
+print("\n========== MODELOS DE REGRESIÓN ==========")
+
+# MODELO 1: PORTEROS
+
+# Variables explicativas.
+X_porteros = datos_porteros[variables_porteros].astype(float)
+
+# Variable que queremos predecir.
+y_porteros = datos_porteros["calificacion_media"].astype(float)
+
+# Crear y entrenar el modelo.
+modelo_porteros = LinearRegression()
+modelo_porteros.fit(X_porteros, y_porteros)
+
+print("\nModelo de porteros entrenado")
+print("Coeficientes:", modelo_porteros.coef_)
+print("Intercepto:", modelo_porteros.intercept_)
+print("R²:", modelo_porteros.score(X_porteros, y_porteros))
+
+
+# MODELO 2: JUGADORES DE CAMPO
+
+X_campo = datos_campo[variables_campo].astype(float)
+y_campo = datos_campo["calificacion_media"].astype(float)
+
+modelo_campo = LinearRegression()
+modelo_campo.fit(X_campo, y_campo)
+
+print("\nModelo de campo entrenado")
+print("Coeficientes:", modelo_campo.coef_)
+print("Intercepto:", modelo_campo.intercept_)
+print("R²:", modelo_campo.score(X_campo, y_campo))
+
+
+"""
+7.2. Comprobación de los jugadores sin estadísticas
+necesarias para la regresión.
+"""
+
+print("\n========== ESTADÍSTICAS FALTANTES ==========")
+
+# Seleccionamos jugadores de campo que tienen alguna
+# de las variables explicativas vacía.
+campo_sin_estadisticas = campo[
+    campo[variables_campo].isna().any(axis=1)
+]
+
+print("Jugadores de campo sin estadísticas completas:")
+print(len(campo_sin_estadisticas))
+
+# Comprobamos si jugaron algún minuto.
+print("\nMinutos jugados por estos jugadores:")
+print(campo_sin_estadisticas["minutos_jugados"].value_counts().sort_index())
+
+# Comprobamos también sus partidos jugados.
+print("\nPartidos jugados:")
+print(campo_sin_estadisticas["partidos_jugados"].value_counts().sort_index())
+
+# Comprobamos si tienen calificación conocida.
+print("\nCalificaciones ausentes:")
+print(campo_sin_estadisticas["calificacion_media"].isna().sum())
+
+
+"""
+7.2. Preparación de las estadísticas para imputar
+las calificaciones mediante regresión.
+"""
+
+print("\n========== PREPARACIÓN PARA IMPUTACIÓN ==========")
+
+# Los jugadores de campo con cero minutos y cero partidos
+# no realizaron acciones durante el torneo.
+sin_participacion = (
+    (jugadores["posicion"] != "GK") &
+    (jugadores["partidos_jugados"] == 0) &
+    (jugadores["minutos_jugados"] == 0)
+)
+
+# Solo sustituimos los valores ausentes en sus estadísticas.
+# No modificamos los datos que ya estaban registrados.
+jugadores.loc[sin_participacion, variables_campo] = (
+    jugadores.loc[sin_participacion, variables_campo].fillna(0)
+)
+
+# Comprobamos si quedan estadísticas ausentes.
+print("Nulos restantes en estadísticas de campo:")
+print(
+    jugadores.loc[jugadores["posicion"] != "GK", variables_campo]
+    .isna().sum()
+)
+
+# Comprobamos las calificaciones pendientes.
+print("\nCalificaciones ausentes:")
+print(jugadores["calificacion_media"].isna().sum())
+
+
+"""
+7.2. Imputación de calificacion_media mediante
+regresión lineal separando porteros y jugadores de campo.
+"""
+
+print("\n========== IMPUTACIÓN DE CALIFICACIONES ==========")
+
+# Seleccionamos solamente los porteros sin calificación.
+porteros_sin_calificacion = (
+    (jugadores["posicion"] == "GK") &
+    jugadores["calificacion_media"].isna()
+)
+
+# Predecimos las calificaciones utilizando el modelo de porteros.
+predicciones_porteros = modelo_porteros.predict(
+    jugadores.loc[
+        porteros_sin_calificacion, variables_porteros
+    ].astype(float)
+)
+
+# Guardamos las predicciones únicamente en las filas ausentes.
+jugadores.loc[
+    porteros_sin_calificacion, "calificacion_media"
+] = predicciones_porteros
+
+
+# Seleccionamos los jugadores de campo sin calificación.
+campo_sin_calificacion = (
+    (jugadores["posicion"] != "GK") &
+    jugadores["calificacion_media"].isna()
+)
+
+# Predecimos utilizando el modelo de jugadores de campo.
+predicciones_campo = modelo_campo.predict(
+    jugadores.loc[
+        campo_sin_calificacion, variables_campo
+    ].astype(float)
+)
+
+jugadores.loc[
+    campo_sin_calificacion, "calificacion_media"
+] = predicciones_campo
+
+
+# Comprobaciones finales.
+print("Calificaciones ausentes después de imputar:")
+print(jugadores["calificacion_media"].isna().sum())
+
+print("\nResumen de las calificaciones:")
+print(jugadores["calificacion_media"].describe())
+
+print("\nCalificaciones fuera del rango 0-10:")
+print(
+    jugadores[
+        (jugadores["calificacion_media"] < 0) |
+        (jugadores["calificacion_media"] > 10)
+    ]
+)
+
+
+
+"""
+7.3. Imputación de minuto_evento mediante interpolación.
+
+Estimamos los minutos ausentes utilizando los eventos
+anteriores y posteriores del mismo partido.
+"""
+
+print("\n========== INTERPOLACIÓN DE MINUTOS ==========")
+
+print("Minutos ausentes antes:")
+print(eventos["minuto_evento"].isna().sum())
+
+# Trabajamos con valores decimales para permitir la interpolación.
+eventos["minuto_evento"] = eventos["minuto_evento"].astype(float)
+
+# Interpolamos por separado los eventos de cada partido,
+# conservando el orden original de los registros.
+for partido in eventos["index_partido"].dropna().unique():
+
+    # Seleccionamos los eventos correspondientes al partido.
+    mismo_partido = eventos["index_partido"] == partido
+
+    # Calculamos la interpolación utilizando únicamente
+    # los minutos de ese partido.
+    minutos_interpolados = eventos.loc[
+        mismo_partido, "minuto_evento"
+    ].interpolate(method="linear", limit_area="inside")
+
+    # Sustituimos exclusivamente los minutos ausentes.
+    eventos.loc[mismo_partido, "minuto_evento"] = (
+        eventos.loc[mismo_partido, "minuto_evento"]
+        .fillna(minutos_interpolados)
+    )
+
+print("\nMinutos ausentes después de interpolar:")
+print(eventos["minuto_evento"].isna().sum())
+
+# Comprobamos que los minutos tengan valores válidos.
+print("\nMinutos negativos:")
+print((eventos["minuto_evento"] < 0).sum())
+
+print("\nMinutos superiores a 121:")
+print((eventos["minuto_evento"] > 121).sum())
+
+
+"""
+7.3. Revisión de los minutos que siguen ausentes
+después de la interpolación.
+"""
+
+print("\n========== MINUTOS PENDIENTES ==========")
+
+# Seleccionamos los eventos que todavía no tienen minuto.
+eventos_pendientes = eventos[
+    eventos["minuto_evento"].isna()
+]
+
+# Mostramos los 22 eventos y sus tipos.
+print(eventos_pendientes.to_string())
+
+# Contamos cuántos pertenecen a cada tipo de evento.
+print("\nTipos de eventos pendientes:")
+print(eventos_pendientes["tipo_evento"].value_counts())
+
+# Identificamos a qué partidos pertenecen.
+print("\nPartidos con minutos pendientes:")
+print(eventos_pendientes["index_partido"].value_counts())
+
+
+"""
+7.3. Completar los minutos que no se han podido
+estimar mediante interpolación interior.
+"""
+
+print("\n========== COMPLETAR MINUTOS PENDIENTES ==========")
+
+# 1. En los eventos de tanda, el minuto utilizado es 121.
+tanda_sin_minuto = (
+    eventos["minuto_evento"].isna() &
+    eventos["tipo_evento"].isin([
+        "Penalty Shootout Goal",
+        "Penalty Shootout Miss"
+    ])
+)
+
+print("Eventos de tanda pendientes:", tanda_sin_minuto.sum())
+
+eventos.loc[tanda_sin_minuto, "minuto_evento"] = 121
+
+
+# 2. Para los extremos, tomamos el minuto conocido más cercano
+# dentro del mismo partido.
+for partido in eventos["index_partido"].dropna().unique():
+
+    mismo_partido = eventos["index_partido"] == partido
+
+    # ffill utiliza el último valor conocido anterior.
+    # bfill utiliza el primer valor conocido posterior.
+    eventos.loc[mismo_partido, "minuto_evento"] = (
+        eventos.loc[mismo_partido, "minuto_evento"]
+        .ffill()
+        .bfill()
+    )
+
+
+# 3. Comprobaciones finales.
+print("\nMinutos ausentes después:")
+print(eventos["minuto_evento"].isna().sum())
+
+print("\nMinutos negativos:")
+print((eventos["minuto_evento"] < 0).sum())
+
+print("\nMinutos superiores a 121:")
+print((eventos["minuto_evento"] > 121).sum())
+
+print("\nEventos restantes:")
+print(len(eventos))
+
+
+
+"""
+Comprobación final de los tipos de datos
+antes de exportar los DataFrames.
+"""
+
+print("\n========== TIPOS DE DATOS FINALES ==========")
+
+# Convertimos las fechas de texto a fechas reales.
+# Indicamos expresamente que están en formato día/mes/año.
+partidos["fecha_partido"] = pd.to_datetime(
+    partidos["fecha_partido"],
+    format="%d/%m/%Y"
+)
+
+# Redondeamos los minutos interpolados y los convertimos a enteros.
+eventos["minuto_evento"] = eventos["minuto_evento"].round().astype("Int64")
+
+print("\nTipos de partidos:")
+print(partidos.dtypes)
+
+print("\nTipos de jugadores:")
+print(jugadores.dtypes)
+
+print("\nTipos de eventos:")
+print(eventos.dtypes)
+
+
+
+"""
+8. Exportación de los DataFrames finales a Excel.
+"""
+
+print("\n========== EXPORTACIÓN A EXCEL ==========")
+
+# Exportamos cada DataFrame a un archivo Excel independiente.
+# index=True conserva los índices exigidos por el enunciado.
+
+partidos.to_excel("partidosWC26.xlsx", index=True)
+
+eventos.to_excel("eventosWC26.xlsx", index=True)
+
+jugadores.to_excel("jugadoresWC2026.xlsx", index=True)
+
+print("Archivo partidosWC26.xlsx generado.")
+print("Archivo eventosWC26.xlsx generado.")
+print("Archivo jugadoresWC2026.xlsx generado.")
+
+print("\nDimensiones finales:")
+print("Partidos:", partidos.shape)
+print("Eventos:", eventos.shape)
+print("Jugadores:", jugadores.shape)
+
+
+
+
